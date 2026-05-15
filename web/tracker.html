@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EmerGPS - Live Tracking</title>
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- MapLibre GL JS -->
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <!-- Tailwind CSS for quick styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0b0c0e;
+            color: #fff;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .glass {
+            background: rgba(23, 25, 28, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <!-- Overlay UI -->
+    <div class="fixed top-4 left-4 right-4 md:left-6 md:top-6 md:right-auto md:w-96 z-10">
+        <div class="glass p-6 rounded-2xl shadow-2xl">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h1 class="text-xl font-bold text-white">EmerGPS</h1>
+                    <p class="text-sm text-gray-400">Live Location Tracking</p>
+                </div>
+                <div id="status-badge" class="px-3 py-1 bg-red-900/30 border border-red-800 text-red-400 text-xs font-bold rounded-full uppercase">
+                    Disconnected
+                </div>
+            </div>
+
+            <div id="info-box" class="space-y-3 hidden">
+                <div class="flex justify-between items-center py-2 border-b border-white/5">
+                    <span class="text-gray-400 text-sm">Status</span>
+                    <span id="session-status" class="text-green-400 font-semibold">Active</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-white/5">
+                    <span class="text-gray-400 text-sm">Last Updated</span>
+                    <span id="last-updated" class="text-white text-sm">--</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-white/5">
+                    <span class="text-gray-400 text-sm">Speed</span>
+                    <span id="speed" class="text-white text-sm">--</span>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="text-gray-400 text-sm">Battery</span>
+                    <span id="battery" class="text-white text-sm">--</span>
+                </div>
+            </div>
+
+            <div id="loading-box" class="text-center py-4 text-gray-400 text-sm">
+                Waiting for share token in URL...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Config
+        const SUPABASE_URL = 'https://claitjthpobhldapecay.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsYWl0anRocG9iaGxkYXBlY2F5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDM5MzgsImV4cCI6MjA5NDQxOTkzOH0.Rq-gYOjNqAELInMB6nYuSKvxroXyX6hmKDDqPLuiZ98';
+        const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+
+        // Initialize Supabase
+        const supabase = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Get token from URL
+        const pathParts = window.location.pathname.split('/');
+        // URL format assumed: domain.com/track/TOKEN or domain.com/?token=TOKEN
+        let token = pathParts[pathParts.length - 1];
+        
+        // Fallback to query param
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!token || token === 'tracker.html' || token === '') {
+            token = urlParams.get('token');
+        }
+
+        const loadingBox = document.getElementById('loading-box');
+        const infoBox = document.getElementById('info-box');
+        const statusBadge = document.getElementById('status-badge');
+
+        if (!token) {
+            loadingBox.innerText = '❌ No tracking token found in URL. Use URL?token=YOUR_TOKEN';
+        } else {
+            loadingBox.innerText = 'Connecting to session...';
+            initTracking(token);
+        }
+
+        async function initTracking(shareToken) {
+            // Initialize Map
+            const map = new maplibregl.Map({
+                container: 'map',
+                style: MAP_STYLE_URL,
+                center: [0, 0],
+                zoom: 2
+            });
+
+            const marker = new maplibregl.Marker({
+                color: "#ff3b30",
+                scale: 1.2
+            });
+
+            // Fetch Session
+            const { data: session, error } = await supabase
+                .from('tracking_sessions')
+                .select('*')
+                .eq('share_token', shareToken)
+                .single();
+
+            if (error || !session) {
+                loadingBox.innerText = '❌ Invalid or expired tracking session.';
+                return;
+            }
+
+            loadingBox.classList.add('hidden');
+            infoBox.classList.remove('hidden');
+            statusBadge.innerText = 'Connected';
+            statusBadge.classList.remove('bg-red-900/30', 'text-red-400', 'border-red-800');
+            statusBadge.classList.add('bg-green-900/30', 'text-green-400', 'border-green-800');
+
+            if (session.is_emergency) {
+                document.getElementById('session-status').innerText = '🚨 EMERGENCY';
+                document.getElementById('session-status').classList.add('text-red-500');
+            }
+
+            // Fetch Latest Location
+            const { data: locations } = await supabase
+                .from('location_updates')
+                .select('*')
+                .eq('session_id', session.id)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (locations && locations.length > 0) {
+                updateUI(locations[0], map, marker);
+            }
+
+            // Subscribe to Realtime Updates
+            const channel = supabase.channel(`tracking:${session.id}`)
+                .on('broadcast', { event: 'location' }, (payload) => {
+                    console.log('New location via broadcast:', payload);
+                    updateUI(payload.payload, map, marker);
+                })
+                .subscribe((status) => {
+                    console.log('Subscription status:', status);
+                });
+                
+            // Fallback: Poll database every 5 seconds if broadcast fails
+            setInterval(async () => {
+                const { data } = await supabase
+                    .from('location_updates')
+                    .select('*')
+                    .eq('session_id', session.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                    
+                if (data && data.length > 0) {
+                    updateUI(data[0], map, marker);
+                }
+            }, 5000);
+        }
+
+        function updateUI(data, map, marker) {
+            const lat = data.latitude;
+            const lng = data.longitude;
+
+            if (!lat || !lng) return;
+
+            // Update Marker
+            marker.setLngLat([lng, lat]).addTo(map);
+            
+            // Center Map on first update or if far away
+            const center = map.getCenter();
+            if (center.lng === 0 && center.lat === 0) {
+                map.setCenter([lng, lat]);
+                map.setZoom(16);
+            }
+
+            // Update Info
+            document.getElementById('last-updated').innerText = new Date(data.created_at || Date.now()).toLocaleTimeString();
+            document.getElementById('speed').innerText = data.speed ? `${(data.speed * 3.6).toFixed(1)} km/h` : '--';
+            document.getElementById('battery').innerText = data.battery_level ? `${Math.round(data.battery_level * 100)}%` : '--';
+        }
+    </script>
+</body>
+</html>
