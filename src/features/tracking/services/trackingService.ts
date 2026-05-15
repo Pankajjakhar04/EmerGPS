@@ -199,7 +199,9 @@ export const TrackingService = {
           if (authObj.access_token) accessToken = authObj.access_token;
         }
       }
-    } catch (e) {}
+    } catch {
+      // Ignore auth token parsing issues and fall back to anon key.
+    }
 
     try {
       const res = await fetch(`${ENV.SUPABASE_URL}/rest/v1/tracking_sessions?owner_id=eq.${userId}&is_active=eq.true&order=created_at.desc&limit=1`, {
