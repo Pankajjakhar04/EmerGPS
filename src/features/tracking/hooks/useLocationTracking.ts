@@ -91,8 +91,14 @@ export function useLocationTracking() {
     locationService.stop();
 
     // Stop session in DB
-    if (sessionId) {
-      await TrackingService.stopSession(sessionId);
+    const stopped = sessionId ? await TrackingService.stopSession(sessionId) : true;
+
+    if (!stopped) {
+      Alert.alert(
+        'Unable to stop sharing',
+        'The session could not be deactivated on the server. Your GPS has been stopped locally, but the live link may still be active until the request succeeds.',
+      );
+      return;
     }
 
     // Cleanup realtime
