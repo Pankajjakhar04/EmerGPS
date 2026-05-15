@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Node project
+        id: detect
+        run: |
+          if [ -f package.json ]; then
+            echo "has_package=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_package=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -f package-lock.json ]; then
+            echo "has_lock=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_lock=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.detect.outputs.has_package == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: steps.detect.outputs.has_package == 'true' && steps.detect.outputs.has_lock == 'true'
+        run: npm ci
+
+      - name: Install dependencies (no lockfile)
+        if: steps.detect.outputs.has_package == 'true' && steps.detect.outputs.has_lock != 'true'
+        run: npm install
+
+      - name: Skip note (no package.json)
+        if: steps.detect.outputs.has_package != 'true'
+        run: echo "No package.json found. Skipping lint/test checks for this PR."
+
+      - name: Lint
+        if: steps.detect.outputs.has_package == 'true'
+        run: npm run lint --if-present
+
+      - name: Test
+        if: steps.detect.outputs.has_package == 'true'
+        run: npm run test --if-present -- --ci --watchAll=false
