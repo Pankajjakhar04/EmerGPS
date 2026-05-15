@@ -1,0 +1,19 @@
+{
+  "rewrites": [
+    {
+      "source": "/track/:token",
+      "destination": "/tracker.html?token=:token"
+    },
+    {
+      "source": "/:token",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "text/html.*"
+        }
+      ],
+      "destination": "/tracker.html?token=:token"
+    }
+  ]
+}

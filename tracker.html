@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EmerGPS Live Tracker</title>
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+    />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg-0: #05080e;
+        --bg-1: #0a1224;
+        --bg-2: #101c30;
+        --card: rgba(9, 18, 37, 0.72);
+        --line: rgba(152, 188, 255, 0.25);
+        --text: #edf4ff;
+        --muted: #95a8c7;
+        --accent: #66d6ff;
+        --ok: #89f7a1;
+        --warn: #ff9088;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: radial-gradient(1100px 700px at -5% -10%, #183057 0%, transparent 60%),
+          radial-gradient(900px 700px at 105% 5%, #0a3448 0%, transparent 58%),
+          linear-gradient(140deg, var(--bg-0), var(--bg-1) 48%, var(--bg-2));
+        color: var(--text);
+        font-family: Manrope, "Segoe UI", sans-serif;
+        overflow: hidden;
+      }
+
+      #map {
+        position: fixed;
+        inset: 0;
+      }
+
+      .chrome {
+        position: fixed;
+        inset: 14px;
+        display: grid;
+        align-content: space-between;
+        pointer-events: none;
+      }
+
+      .panel {
+        width: min(420px, calc(100vw - 28px));
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--card);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 16px 60px rgba(2, 8, 25, 0.46);
+        pointer-events: auto;
+        transform: translateY(10px);
+        opacity: 0;
+        animation: reveal 450ms ease forwards;
+      }
+
+      @keyframes reveal {
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      .top {
+        padding: 16px 18px 14px;
+      }
+
+      .title {
+        margin: 0;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 1.04rem;
+        letter-spacing: 0.03em;
+      }
+
+      .subtitle {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .status {
+        margin-top: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--warn);
+      }
+
+      .live .dot {
+        background: var(--ok);
+      }
+
+      .rows {
+        border-top: 1px solid rgba(174, 203, 255, 0.2);
+        padding: 8px 18px 12px;
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        padding: 8px 0;
+        border-bottom: 1px dashed rgba(158, 191, 255, 0.14);
+      }
+
+      .row:last-child {
+        border-bottom: none;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .value {
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 0.9rem;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.76rem;
+        margin-top: 10px;
+      }
+
+      .banner {
+        margin-top: 10px;
+        background: rgba(188, 27, 27, 0.23);
+        border: 1px solid rgba(255, 122, 122, 0.5);
+        color: #ffdede;
+        border-radius: 12px;
+        padding: 8px 10px;
+        font-size: 0.78rem;
+      }
+
+      .error {
+        margin-top: 10px;
+        color: #ffd3d0;
+        font-size: 0.82rem;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 720px) {
+        .chrome {
+          inset: 10px;
+        }
+        .panel {
+          width: calc(100vw - 20px);
+          border-radius: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>This page requires JavaScript to show live location updates.</noscript>
+    <div id="map"></div>
+
+    <div class="chrome">
+      <section class="panel">
+        <div class="top">
+          <h1 class="title">EmerGPS Live Location</h1>
+          <p class="subtitle">Secure session tracking</p>
+          <div id="status" class="status">
+            <span class="dot"></span>
+            <span id="statusText">Connecting</span>
+          </div>
+          <div id="emergencyBanner" class="banner hidden">Emergency mode is active</div>
+          <div id="errorText" class="error hidden"></div>
+          <div id="hint" class="hint">Reading token from URL and connecting to session.</div>
+        </div>
+
+        <div class="rows">
+          <div class="row"><span class="label">Latitude</span><span id="lat" class="value">--</span></div>
+          <div class="row"><span class="label">Longitude</span><span id="lng" class="value">--</span></div>
+          <div class="row"><span class="label">Last update</span><span id="updated" class="value">--</span></div>
+          <div class="row"><span class="label">Speed</span><span id="speed" class="value">--</span></div>
+          <div class="row"><span class="label">Battery</span><span id="battery" class="value">--</span></div>
+        </div>
+      </section>
+    </div>
+
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      (function () {
+        var SUPABASE_URL = "https://claitjthpobhldapecay.supabase.co";
+        var SUPABASE_ANON_KEY =
+          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsYWl0anRocG9iaGxkYXBlY2F5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDM5MzgsImV4cCI6MjA5NDQxOTkzOH0.Rq-gYOjNqAELInMB6nYuSKvxroXyX6hmKDDqPLuiZ98";
+        var MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+
+        var statusEl = document.getElementById("status");
+        var statusTextEl = document.getElementById("statusText");
+        var hintEl = document.getElementById("hint");
+        var errorTextEl = document.getElementById("errorText");
+        var emergencyBannerEl = document.getElementById("emergencyBanner");
+        var latEl = document.getElementById("lat");
+        var lngEl = document.getElementById("lng");
+        var updatedEl = document.getElementById("updated");
+        var speedEl = document.getElementById("speed");
+        var batteryEl = document.getElementById("battery");
+
+        var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        var map;
+        var marker;
+        var sessionId = null;
+        var hasCentered = false;
+
+        function setStatus(text, live) {
+          statusTextEl.textContent = text;
+          statusEl.classList.toggle("live", Boolean(live));
+        }
+
+        function setHint(text) {
+          hintEl.textContent = text;
+        }
+
+        function setError(text) {
+          errorTextEl.textContent = text;
+          errorTextEl.classList.remove("hidden");
+        }
+
+        function clearError() {
+          errorTextEl.textContent = "";
+          errorTextEl.classList.add("hidden");
+        }
+
+        function parseTokenFromUrl() {
+          var params = new URLSearchParams(window.location.search);
+          var fromQuery = params.get("token");
+          if (fromQuery) {
+            return fromQuery;
+          }
+
+          var parts = window.location.pathname.split("/").filter(Boolean);
+          if (parts.length >= 2 && parts[0] === "track") {
+            return decodeURIComponent(parts[1]);
+          }
+
+          if (parts.length === 1 && parts[0] !== "tracker.html") {
+            return decodeURIComponent(parts[0]);
+          }
+
+          return null;
+        }
+
+        function formatDate(iso) {
+          if (!iso) return "--";
+          var d = new Date(iso);
+          if (Number.isNaN(d.getTime())) return "--";
+          return d.toLocaleString();
+        }
+
+        function formatSpeed(mps) {
+          if (typeof mps !== "number") return "--";
+          return (mps * 3.6).toFixed(1) + " km/h";
+        }
+
+        function formatBattery(level) {
+          if (typeof level !== "number") return "--";
+          return Math.round(level * 100) + "%";
+        }
+
+        function initMap() {
+          map = new maplibregl.Map({
+            container: "map",
+            style: MAP_STYLE_URL,
+            center: [0, 0],
+            zoom: 2,
+          });
+
+          map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+          marker = new maplibregl.Marker({ color: "#66d6ff" });
+
+          window.addEventListener("resize", function () {
+            if (map) map.resize();
+          });
+        }
+
+        function renderLocation(payload) {
+          if (!payload) return;
+          var lat = payload.latitude;
+          var lng = payload.longitude;
+          if (typeof lat !== "number" || typeof lng !== "number") return;
+
+          latEl.textContent = lat.toFixed(6);
+          lngEl.textContent = lng.toFixed(6);
+          updatedEl.textContent = formatDate(payload.updated_at || payload.created_at);
+          speedEl.textContent = formatSpeed(payload.speed);
+          batteryEl.textContent = formatBattery(payload.battery_level);
+
+          marker.setLngLat([lng, lat]).addTo(map);
+
+          if (!hasCentered) {
+            map.setCenter([lng, lat]);
+            map.setZoom(15);
+            hasCentered = true;
+          } else {
+            map.easeTo({ center: [lng, lat], duration: 500 });
+          }
+
+          setStatus("Live", true);
+          setHint("Receiving updates in real time.");
+          clearError();
+        }
+
+        async function fetchLatestLocation() {
+          if (!sessionId) return;
+          var res = await supabase
+            .from("location_updates")
+            .select("*")
+            .eq("session_id", sessionId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+
+          if (!res.error && res.data) {
+            renderLocation(res.data);
+          }
+        }
+
+        function subscribeRealtime() {
+          supabase
+            .channel("tracking:" + sessionId, { config: { broadcast: { self: false } } })
+            .on("broadcast", { event: "location" }, function (payload) {
+              renderLocation(payload.payload);
+            })
+            .subscribe();
+
+          supabase
+            .channel("tracking-db:" + sessionId)
+            .on(
+              "postgres_changes",
+              {
+                event: "INSERT",
+                schema: "public",
+                table: "location_updates",
+                filter: "session_id=eq." + sessionId,
+              },
+              function (payload) {
+                renderLocation(payload.new);
+              }
+            )
+            .subscribe();
+        }
+
+        async function start() {
+          initMap();
+          setStatus("Connecting", false);
+
+          var shareToken = parseTokenFromUrl();
+          if (!shareToken) {
+            setStatus("Invalid link", false);
+            setError("Token missing. Open this page as /track/TOKEN, /TOKEN, or ?token=TOKEN.");
+            setHint("Waiting for a valid token in URL.");
+            return;
+          }
+
+          setHint("Verifying tracking session.");
+
+          var sessionRes = await supabase
+            .from("tracking_sessions")
+            .select("id, is_active, is_emergency")
+            .eq("share_token", shareToken)
+            .eq("is_active", true)
+            .single();
+
+          if (sessionRes.error || !sessionRes.data) {
+            setStatus("Invalid link", false);
+            setError(sessionRes.error ? sessionRes.error.message : "This link is inactive or expired.");
+            setHint("Check that you are using the newest sharing link.");
+            return;
+          }
+
+          sessionId = sessionRes.data.id;
+          if (sessionRes.data.is_emergency) {
+            emergencyBannerEl.classList.remove("hidden");
+          }
+
+          await fetchLatestLocation();
+          subscribeRealtime();
+
+          setStatus("Connected", true);
+          setHint("Waiting for location updates.");
+
+          setInterval(fetchLatestLocation, 12000);
+        }
+
+        start().catch(function (err) {
+          setStatus("Error", false);
+          setError(err && err.message ? err.message : "Unexpected tracker error.");
+          setHint("Reload the page to retry.");
+        });
+      })();
+    </script>
+  </body>
+</html>
